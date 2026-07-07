@@ -14,24 +14,15 @@ import { getRoom, subscribeRoom, submitLine, skipTurn, endRoom } from "../net/ro
 import { trackPresence } from "../net/presence";
 import { currentPlayerId, isCurrentPlayer, nextTurnIndex } from "../lib/turn";
 import { evaluateSubmit } from "../lib/submit";
-import { validateNewBaht, vrancPerBaht } from "../lib/partial";
+import { validateNewBaht, bahtPerBot } from "../lib/partial";
 import { canSubmit } from "../lib/rate";
 import { getForm } from "../prosody/forms";
-import type { Diagnostic, DiagnosticKind, FormSpec } from "../prosody/types";
+import { poemToText, renderPoemCard } from "./export";
+import type { Diagnostic, DiagnosticKind } from "../prosody/types";
 import type { Room, Player } from "../types";
 
 const LIVE_FEEDBACK_DEBOUNCE_MS = 300;
-
-/** บาท per บท for a form, derived from the same torklon-only บาท/บท
- * convention partial.ts already encodes (see its BAHT_PER_BOT table) —
- * computed here from vrancPerBaht (วรรค per บาท) and the form's total วรรค
- * per บท (`units[0].length`) rather than re-deriving/guessing the per-form
- * บาท count independently. */
-function bahtPerBot(form: FormSpec): number {
-  const wakPerBot = form.units[0]?.length ?? 0;
-  const vrancPerBahtCount = vrancPerBaht(form);
-  return vrancPerBahtCount > 0 ? wakPerBot / vrancPerBahtCount : 0;
-}
+const COPY_RESET_MS = 1500;
 
 function statusChip(diags: Diagnostic[], kind: DiagnosticKind, label: string): HTMLSpanElement {
   const bad = diags.some((d) => d.kind === kind && d.blocking);
@@ -132,6 +123,21 @@ export function renderRoom(room: Room, me: Player): { el: HTMLElement; destroy: 
   const poemPanel = document.createElement("div");
   poemPanel.className = "room-poem";
 
+  // Export controls — available anytime (not gated on `status === "ended"`),
+  // since players may want to save/share a snapshot of the poem-so-far
+  // mid-game just as much as at the end.
+  const exportSection = document.createElement("div");
+  exportSection.className = "room-export";
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "room-host-btn";
+  copyBtn.textContent = "คัดลอกข้อความ";
+  const downloadBtn = document.createElement("button");
+  downloadBtn.type = "button";
+  downloadBtn.className = "room-host-btn";
+  downloadBtn.textContent = "ดาวน์โหลดรูปภาพ";
+  exportSection.append(copyBtn, downloadBtn);
+
   const playersList = document.createElement("ul");
   playersList.className = "room-players";
 
@@ -152,7 +158,7 @@ export function renderRoom(room: Room, me: Player): { el: HTMLElement; destroy: 
   submitBtn.textContent = "ส่ง";
   draftSection.append(textarea, feedback, submitError, submitBtn);
 
-  root.append(header, poemPanel, playersList, draftSection);
+  root.append(header, poemPanel, exportSection, playersList, draftSection);
 
   function nicknameFor(playerId: string): string {
     return currentRoom.players.find((p) => p.id === playerId)?.nickname ?? "ผู้เล่น";
@@ -343,6 +349,37 @@ export function renderRoom(room: Room, me: Player): { el: HTMLElement; destroy: 
     });
   });
 
+  let copyResetHandle: number | undefined;
+
+  async function handleCopy(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(poemToText(currentRoom));
+      if (destroyed) return;
+      copyBtn.textContent = "คัดลอกแล้ว ✓";
+      window.clearTimeout(copyResetHandle);
+      copyResetHandle = window.setTimeout(() => {
+        if (!destroyed) copyBtn.textContent = "คัดลอกข้อความ";
+      }, COPY_RESET_MS);
+    } catch {
+      showSubmitError("คัดลอกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    }
+  }
+
+  copyBtn.addEventListener("click", () => void handleCopy());
+
+  downloadBtn.addEventListener("click", () => {
+    const canvas = renderPoemCard(currentRoom);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `torklon-${currentRoom.id}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }, "image/png");
+  });
+
   function onRoomChange(updated: Room): void {
     if (destroyed) return;
     currentRoom = updated;
@@ -388,6 +425,7 @@ export function renderRoom(room: Room, me: Player): { el: HTMLElement; destroy: 
   function destroy(): void {
     destroyed = true;
     window.clearTimeout(debounceHandle);
+    window.clearTimeout(copyResetHandle);
     stopRoom?.();
     stopPresence?.();
     stopRoom = null;

@@ -29,6 +29,15 @@ export function bahtVrancRange(form: FormSpec, bahtIndex: number): { start: numb
   return { start: bahtIndex * n, end: bahtIndex * n + n };
 }
 
+/** บาท per บท for a form, derived from vrancPerBaht (วรรค per บาท) and the
+ * form's total วรรค per บท (`units[0].length`) — used to group `room.lines`
+ * (one Line per บาท) into บท chunks for display/export. */
+export function bahtPerBot(form: FormSpec): number {
+  const wakPerBot = form.units[0]?.length ?? 0;
+  const n = vrancPerBaht(form);
+  return n > 0 ? wakPerBot / n : 0;
+}
+
 /** Inverse of bahtVrancRange's indexing: flatten a Diagnostic's Pos to a flat
  * วรรค index. validate.ts always resolves Diagnostic.pos.bot to the absolute
  * บท index within the checked text (not the FormSpec's relative-0/1

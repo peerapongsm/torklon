@@ -355,6 +355,8 @@ body {
   color: var(--cream-dim);
 }
 
+.room-export { display: flex; gap: 10px; flex-wrap: wrap; }
+
 .room-players {
   list-style: none;
   margin: 0;
