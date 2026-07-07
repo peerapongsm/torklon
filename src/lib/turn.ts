@@ -1,7 +1,9 @@
 import type { Room } from "../types";
 
 export function currentPlayerId(room: Room): string | null {
-  return room.turnOrder.length ? room.turnOrder[room.turnIndex % room.turnOrder.length] : null;
+  if (!room.turnOrder.length) return null;
+  const playerId = room.turnOrder[room.turnIndex % room.turnOrder.length];
+  return playerId ?? null;
 }
 
 export function isCurrentPlayer(room: Room, playerId: string): boolean {
@@ -16,7 +18,7 @@ export function nextTurnIndex(room: Room, presentIds: ReadonlySet<string>): numb
   for (let i = 0; i < orderLen; i++) {
     const nextIdx = room.turnIndex + 1 + i;
     const playerId = room.turnOrder[nextIdx % orderLen];
-    if (presentIds.has(playerId)) {
+    if (playerId && presentIds.has(playerId)) {
       return nextIdx;
     }
   }
