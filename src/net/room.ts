@@ -1,6 +1,6 @@
 // Network layer for torklon live rooms — thin wrapper over the shared
-// Supabase project's `torklon_rooms` table + `torklon_submit_line` /
-// `torklon_skip_turn` RPCs (see supabase/schema.sql).
+// Supabase project's `torklon_rooms` table + `torklon_join_room` /
+// `torklon_submit_line` / `torklon_skip_turn` RPCs (see supabase/schema.sql).
 //
 // Untestable-by-unit-test by design (real network calls); verified live
 // per task-5-brief.md Step 3. Keep this file a thin mapping layer — no
@@ -10,7 +10,6 @@ import type { Room, Player, Line } from "../types";
 import type { FormId } from "../prosody";
 
 const TABLE = "torklon_rooms";
-const MAX_PLAYERS = 8;
 
 // Raw shape of a torklon_rooms row as returned by PostgREST (snake_case).
 interface RoomRow {
@@ -71,25 +70,19 @@ export async function joinRoom(roomId: string, player: Player): Promise<Room | n
   const room = await getRoom(roomId);
   if (!room || room.status === "ended") return null;
   if (room.players.some((p) => p.id === player.id)) return room; // idempotent rejoin
-  if (room.players.length >= MAX_PLAYERS) return null;
 
-  const players = [...room.players, player];
-  const turnOrder = [...room.turnOrder, player.id];
+  // torklon_join_room does the actual append atomically in the DB (append +
+  // room-open + not-full all in one guarded UPDATE — see schema.sql), so two
+  // concurrent joiners can't race a stale-read-then-write and silently
+  // discard each other's join the way a client-side "read players, append,
+  // write players" would. Returns null if the room is missing/ended/full.
+  const { data, error } = await supabase.rpc("torklon_join_room", {
+    p_room: roomId,
+    p_player: player,
+  });
 
-  // Guarded on status='open' so a room ended between the read above and
-  // this write can't be silently rejoined. Not a fully atomic guard against
-  // a concurrent join racing the player-count check (see task-5 report) —
-  // acceptable per brief: worst case is a soft, momentary overshoot of
-  // MAX_PLAYERS, not a correctness bug.
-  const { data, error } = await supabase
-    .from(TABLE)
-    .update({ players, turn_order: turnOrder })
-    .eq("id", roomId)
-    .eq("status", "open")
-    .select()
-    .single();
-
-  if (error || !data) return null;
+  if (error) throw error;
+  if (!data) return null;
   return mapRow(data as RoomRow);
 }
 
@@ -141,7 +134,7 @@ export async function endRoom(roomId: string, hostId: string): Promise<void> {
 
 export function subscribeRoom(roomId: string, onChange: (room: Room) => void): () => void {
   const channel = supabase
-    .channel(`torklon:${roomId}`)
+    .channel(`torklon:${roomId}:room`)
     .on<RoomRow>(
       "postgres_changes",
       { event: "*", schema: "public", table: TABLE, filter: `id=eq.${roomId}` },

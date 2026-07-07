@@ -1,8 +1,13 @@
 // Realtime Presence for torklon rooms — who's currently connected.
 //
-// Uses the same `torklon:<roomId>` channel namespace that net/room.ts's
-// subscribeRoom() uses for postgres_changes (each module opens its own
-// channel instance on that topic; Supabase multiplexes them independently).
+// Uses its own `torklon:<roomId>:presence` channel topic, distinct from
+// net/room.ts's subscribeRoom() topic (`torklon:<roomId>:room`). Supabase's
+// RealtimeClient.channel() dedupes by topic — calling .channel() with a
+// topic that already has an open channel returns that SAME instance rather
+// than creating an independent one, so a room screen that needs both live
+// DB updates (subscribeRoom) and a presence list (trackPresence) at once
+// would crash: the second .on()/.subscribe() call would be registered
+// against an already-joining/joined channel. Distinct topics avoid that.
 import { supabase } from "../config/supabase";
 import type { Player } from "../types";
 
@@ -11,7 +16,7 @@ export function trackPresence(
   player: Player,
   onSync: (present: Player[]) => void,
 ): () => void {
-  const channel = supabase.channel(`torklon:${roomId}`, {
+  const channel = supabase.channel(`torklon:${roomId}:presence`, {
     config: { presence: { key: player.id } },
   });
 

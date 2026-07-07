@@ -100,6 +100,40 @@ begin
 end;
 $$;
 
+-- torklon_join_room: same atomic-conditional-UPDATE pattern as the two RPCs
+-- above, applied to joining. A client-side "read players, append, write
+-- players" (the pattern this RPC replaces) has no guard tying the write to
+-- the snapshot it read: two concurrent joiners who both read players=[A]
+-- each compute and write their own full array ([A,B] and [A,C]); whichever
+-- UPDATE lands last wins and silently discards the other join. Folding the
+-- append + room-open + not-full checks into one atomic UPDATE closes that
+-- window — the loser's UPDATE matches zero rows and `found` is false, so
+-- joinRoom can tell the two cases apart instead of both callers believing
+-- they joined.
+create or replace function torklon_join_room(
+  p_room text,
+  p_player jsonb
+) returns jsonb
+language plpgsql
+as $$
+declare
+  updated torklon_rooms;
+begin
+  update torklon_rooms
+    set players = players || p_player,
+        turn_order = turn_order || to_jsonb(p_player->>'id')
+    where id = p_room
+      and status = 'open'
+      and jsonb_array_length(players) < 8
+    returning * into updated;
+
+  if not found then
+    return null;
+  end if;
+  return to_jsonb(updated);
+end;
+$$;
+
 -- ============================================================================
 -- Realtime — add torklon_rooms to the Supabase Realtime publication
 -- ============================================================================
