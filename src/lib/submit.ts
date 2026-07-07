@@ -9,7 +9,7 @@ export function evaluateSubmit(room: Room, playerId: string, baht: string): Subm
     const turnViolation: Diagnostic = {
       kind: "count-mismatch",
       pos: { bot: 0, wak: 0, syl: 0 },
-      message: "Not current player",
+      message: "ยังไม่ใช่ตาของคุณ",
       rule: "turn-order",
       blocking: true,
     };
