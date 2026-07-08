@@ -120,6 +120,30 @@ export function renderRoom(room: Room, me: Player): { el: HTMLElement; destroy: 
   hostControls.append(skipBtn, endBtn);
   header.append(turnIndicator, hostControls);
 
+  // Invite control — the room id doubles as the join code (see net/room.ts's
+  // "room-id-as-secret" trust model), so sharing the link is just appending
+  // `?room=<id>` to the current URL; src/ui/lobby.ts already knows how to
+  // read that param and render the join form. Shown for anyone while the
+  // game is open (not just the host) since any player may want to bring in
+  // more people, and the room isn't capped to 2 (torklon_join_room allows up
+  // to 8 — see supabase/schema.sql).
+  const inviteSection = document.createElement("div");
+  inviteSection.className = "room-invite";
+  const inviteLabel = document.createElement("span");
+  inviteLabel.className = "room-invite-label";
+  inviteLabel.textContent = "ชวนเพื่อนเข้าห้อง";
+  const inviteLink = document.createElement("input");
+  inviteLink.type = "text";
+  inviteLink.className = "room-invite-link";
+  inviteLink.readOnly = true;
+  inviteLink.value = `${location.origin}${location.pathname}?room=${currentRoom.id}`;
+  inviteLink.addEventListener("click", () => inviteLink.select());
+  const inviteCopyBtn = document.createElement("button");
+  inviteCopyBtn.type = "button";
+  inviteCopyBtn.className = "room-host-btn room-invite-btn";
+  inviteCopyBtn.textContent = "คัดลอกลิงก์เชิญ";
+  inviteSection.append(inviteLabel, inviteLink, inviteCopyBtn);
+
   const poemPanel = document.createElement("div");
   poemPanel.className = "room-poem";
 
@@ -158,7 +182,7 @@ export function renderRoom(room: Room, me: Player): { el: HTMLElement; destroy: 
   submitBtn.textContent = "ส่ง";
   draftSection.append(textarea, feedback, submitError, submitBtn);
 
-  root.append(header, poemPanel, exportSection, playersList, draftSection);
+  root.append(header, inviteSection, poemPanel, exportSection, playersList, draftSection);
 
   function nicknameFor(playerId: string): string {
     return currentRoom.players.find((p) => p.id === playerId)?.nickname ?? "ผู้เล่น";
@@ -367,6 +391,25 @@ export function renderRoom(room: Room, me: Player): { el: HTMLElement; destroy: 
 
   copyBtn.addEventListener("click", () => void handleCopy());
 
+  let inviteCopyResetHandle: number | undefined;
+
+  async function handleInviteCopy(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(inviteLink.value);
+      if (destroyed) return;
+      inviteCopyBtn.textContent = "คัดลอกแล้ว ✓";
+      window.clearTimeout(inviteCopyResetHandle);
+      inviteCopyResetHandle = window.setTimeout(() => {
+        if (!destroyed) inviteCopyBtn.textContent = "คัดลอกลิงก์เชิญ";
+      }, COPY_RESET_MS);
+    } catch {
+      inviteLink.select();
+      showSubmitError("คัดลอกลิงก์ไม่สำเร็จ ลองกดที่ช่องลิงก์แล้วคัดลอกเอง");
+    }
+  }
+
+  inviteCopyBtn.addEventListener("click", () => void handleInviteCopy());
+
   downloadBtn.addEventListener("click", () => {
     const canvas = renderPoemCard(currentRoom);
     canvas.toBlob((blob) => {
@@ -426,6 +469,7 @@ export function renderRoom(room: Room, me: Player): { el: HTMLElement; destroy: 
     destroyed = true;
     window.clearTimeout(debounceHandle);
     window.clearTimeout(copyResetHandle);
+    window.clearTimeout(inviteCopyResetHandle);
     stopRoom?.();
     stopPresence?.();
     stopRoom = null;

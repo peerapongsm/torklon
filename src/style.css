@@ -308,6 +308,38 @@ body {
 
 .room-host-btn[hidden] { display: none; }
 
+.room-invite {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--grove-border);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+
+.room-invite-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--cream-dim);
+  flex-shrink: 0;
+}
+
+.room-invite-link {
+  flex: 1 1 200px;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--cream);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--grove-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.room-invite-btn { flex-shrink: 0; }
+
 .room-poem {
   background: linear-gradient(180deg, var(--grove-raised), var(--grove));
   border: 1px solid var(--grove-border);
